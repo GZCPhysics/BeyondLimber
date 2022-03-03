@@ -8,7 +8,7 @@ Major functioning scripts are:
 3. Calculation.py
 
 Required the packages are: 
-### numpy, ### scipy, ### mpmath, ### Colossus, ### pyCAMB.
+### numpy, scipy, mpmath, Colossus, pyCAMB.
 
 The choice of cosmology related functions could be replaced with anything users are familiar with.
 
