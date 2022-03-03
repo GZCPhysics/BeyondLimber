@@ -1,0 +1,11 @@
+c = 3e8  #Speed of light, in unit of m/s
+zCMB = 1100 
+zmax = 1500
+h=0.6711
+omch2 = 0.12029
+ombh2 = 0.02207
+Omc = omch2/h**2
+Omb = ombh2/h**2
+Omm = Omb+Omc
+ns = 0.97
+s8 = 0.83747596996536
