@@ -50,7 +50,8 @@ class MyCosmology(object):
         #This function sets up CosmoMC-like settings, with one massive neutrino and helium set using BBN consistency
         self.pars.set_cosmology(H0=self.h*100, ombh2=self.ombh2, omch2=self.omch2, mnu=0.06, omk=0, tau=0.06)
         self.pars.InitPower.set_params(As=2.21536e-9, ns=self.ns, r=0)
-        self.pars.set_for_lmax(2500, lens_potential_accuracy=0)
+        self.pars.set_for_lmax(2500, lens_potential_accuracy=1)
+        self.pars.set_dark_energy(w=-1, wa=0, dark_energy_model='fluid')
         self.results = camb.get_results(self.pars)
         #Setting up colossus
         self.params = {'flat': True, 'H0': 100*h, 'Om0': self.Omm, 'Ob0': self.Omb, 'sigma8': self.s8, 'ns': self.ns}
@@ -80,12 +81,15 @@ class MyCosmology(object):
     
     def red_at_chi(self, chi_x):
         '''
+        Params:
+        chi_x: comoving distance with a unit of [Mpc/h]
+
         Return: 
         
         A function that could give us the redshift of a given comoving distance
         '''
 
-        z = self.results.redshift_at_comoving_radial_distance(chi_x/self.h)
+        z = self.results.redshift_at_comoving_radial_distance(chi_x/self.h) 
         return z
     
     def a(self, chi):
@@ -123,6 +127,28 @@ class MyCosmology(object):
         '''
         return self.Dg_chi(chi)/self.Dg_z(0.00001)
     
+    def Psi_normalizer(self, chi_x):
+        '''
+        This is the normalization factor used in evaluating the power spectrum of lensing potential.
+        Params:
+        chi_x: the comoving distance, with a unit of [Mpc/h]
+
+        Returns:
+        3*Omega_m*HH^2/2
+        '''
+        z_x = self.red_at_chi(chi_x)
+        #Omega_m = self.results.get_Omega('cdm', z_x) + self.results.get_Omega('Baryon', z_x)
+        Omega_m = self.cosmo.Om(z_x)
+
+        return 1.5 * Omega_m * self.HH(z_x)**2 / (1+z_x)**2
+    
+    def Cl_lensing_camb(self, lmax):
+        '''
+        This is the implemented function in camb, to calulate the modified full-sky angular power spectrum of CMB lensing potential
+        '''
+
+        return self.results.get_lens_potential_cls(lmax=lmax) 
+    
 #To make it more flexible in choosing different preferences over class, we separatly write the following calculations in another class
 class Window_function(object):
     '''
@@ -139,6 +165,13 @@ class Window_function(object):
         term1 = 1/(np.sqrt(2*np.pi))/chi_sigma
         term2 = np.exp(-(chi-chi_avg)**2/(2*chi_sigma**2))
         return term1*term2
+    
+    def Wlensing(self, chi, chi_star):
+        '''
+        Here we consider the general used lensing window function
+        '''
+
+        return -2*(chi_star-chi)/(chi_star*chi)
 
 class Sampling(object):
 
@@ -147,6 +180,7 @@ class Sampling(object):
         #Introducing cosmology, where the parameters could vary and even the choice of cosmology class could be changed
         self.default_cosmo = MyCosmology(c, zCMB, zmax, h, omch2, ombh2, ns, s8)
         self.Wg = Window_function().Wg
+        self.Wlensing = Window_function().Wlensing
     
     def CoeffTransfer(self, P, b, cst, Nmax, kmin, kmax):
         """
@@ -184,7 +218,7 @@ class Sampling(object):
 
         return result
     
-    def mesh_grid_generator(self, z1, z2, sigma1, sigma2, Nchi, Ndchi):
+    def mesh_grid_generator_old(self, z1, z2, sigma1, sigma2, Nchi, Ndchi):
         '''
         Params:
         z1, z2: the redshifts of our objects
@@ -199,8 +233,8 @@ class Sampling(object):
         chi_avg2 = self.default_cosmo.chi(z2)
         chi_sigma1 = sigma1/self.default_cosmo.HH(z1)
         chi_sigma2 = sigma2/self.default_cosmo.HH(z2)
-        chi_min = max(chi_avg1-4*chi_sigma1, 0.5)
-        chi_max = min(chi_avg2+4*chi_sigma2, self.default_cosmo.chi(10.0))
+        chi_min = max(chi_avg1-3*chi_sigma1, self.default_cosmo.chi(0.00001))
+        chi_max = min(chi_avg2+3*chi_sigma2, self.default_cosmo.chi(10.0))
         chi_array = np.array([chi_min + i*(chi_max-chi_min)/Nchi for i in range(Nchi)])
         dchi_array = np.array(list(-10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])[::-1])\
                 +list(10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])))
@@ -214,7 +248,134 @@ class Sampling(object):
         Wg2_Wg2 = self.Wg(grid2, chi_avg2, chi_sigma2)
 
         return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2
+    
+    def mesh_grid_generator(self, z1, z2, sigma1, sigma2, Nchi, Ndchi):
+        '''
+        This is sampling 2D mesh-grid function over chi and delta_chi,
+        with self-adapting range of delta_chi
 
+        Params:
+        z1, z2: the redshifts of our objects
+        sigma1, sigma2: the dispersion of our window function
+        Nchi, Ndchi: fidicually chosen length of the sampling array of chi and dchi
+
+        Return:
+        mesh-grids of chi1_chi1, chi2_chi2, 
+        and, growth factors D1_D1, D2_D2.
+        '''
+        chi_avg1 = self.default_cosmo.chi(z1)
+        chi_avg2 = self.default_cosmo.chi(z2)
+        chi_sigma1 = sigma1/self.default_cosmo.HH(z1)
+        chi_sigma2 = sigma2/self.default_cosmo.HH(z2)
+        chi_min = max(100, chi_avg1-4*chi_sigma1)
+        chi_max = min(self.default_cosmo.chi(1100), chi_avg2+chi_sigma2*4)
+        chi_array = np.array([chi_min + i*(chi_max-chi_min)/Nchi for i in range(Nchi)])
+        dchi_basline = np.arange(2*Ndchi)
+        D1_D1 = np.zeros((2*Ndchi, Nchi))
+        D2_D2 = np.zeros((2*Ndchi, Nchi))
+
+        chi_chi, dchi_dchi_raw = np.meshgrid(chi_array, dchi_basline)
+        dchi_dchi_list = []
+        for i in range(Nchi):
+            dchi_max = min(2*chi_array[i], 2*(self.default_cosmo.chi(1110)-chi_array[i]))
+            dchi_array = list(-10**np.array([-1+(np.log10(dchi_max-1)+1)/Ndchi*j for j in range(Ndchi)])[::-1])\
+                +list(10**np.array([-1+(np.log10(dchi_max-1)+1)/Ndchi*j for j in range(Ndchi)]))
+            dchi_dchi_list.append(dchi_array)
+        dchi_dchi = np.transpose(np.array(dchi_dchi_list))
+        grid1 = chi_chi-0.5*dchi_dchi
+        grid2 = chi_chi+0.5*dchi_dchi
+        
+        for i in range(len(chi_array)):
+            for j in range(len(dchi_basline)):
+                grid1_ji = grid1[j,i]
+                grid2_ji = grid2[j,i]
+                D1_D1[j, i] = self.default_cosmo.Dg_norm(grid1_ji)
+                D2_D2[j, i] = self.default_cosmo.Dg_norm(grid2_ji)
+
+        Wg1_Wg1 = self.Wg(grid1, chi_avg1, chi_sigma1)
+        Wg2_Wg2 = self.Wg(grid2, chi_avg2, chi_sigma2)
+
+        return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2
+
+    def mesh_grid_generator_CMBlensing(self, Nchi, Ndchi):
+        '''
+        Generating 2D sampling mesh-grid via self-adapting chi and delta_chi
+        Params:
+        z1, z2: the redshifts of our objects
+        sigma1, sigma2: the dispersion of our window function
+        Nchi, Ndchi: fidicually chosen length of the sampling array
+
+        Return:
+        mesh-grids of chi_chi, dchi_dchi, 
+        and, growth factors D1_D1, D2_D2.
+        '''
+        chi_min = 100.0
+        chi_max = self.default_cosmo.chi(1100)
+        chi_array = np.array([chi_min + i*(chi_max-chi_min)/Nchi for i in range(Nchi)])
+        dchi_basline = np.arange(2*Ndchi+2)
+        D1_D1 = np.zeros((2*Ndchi+2, Nchi))
+        D2_D2 = np.zeros((2*Ndchi+2, Nchi))
+        F1_F1 = np.zeros((2*Ndchi+2, Nchi))
+        F2_F2 = np.zeros((2*Ndchi+2, Nchi))
+
+        chi_chi, dchi_dchi_raw = np.meshgrid(chi_array, dchi_basline)
+        dchi_dchi_list = []
+        for i in range(Nchi):
+            dchi_max = min(2*chi_array[i], 2*(self.default_cosmo.chi(2200)-chi_array[i])) #We can change the maximum comoving distance, but note there are actually upper limit in colossus code
+            dchi_array = list(-10**np.array([-2+(np.log10(dchi_max-100)+2)/Ndchi*j for j in range(Ndchi+1)])[::-1])\
+                +list(10**np.array([-2+(np.log10(dchi_max-100)+2)/Ndchi*j for j in range(Ndchi+1)]))
+            dchi_dchi_list.append(dchi_array)
+        dchi_dchi = np.transpose(np.array(dchi_dchi_list))
+        print(np.shape(chi_chi), np.shape(dchi_dchi))
+        grid1 = chi_chi-0.5*dchi_dchi
+        grid2 = chi_chi+0.5*dchi_dchi
+        
+        for i in range(len(chi_array)):
+            for j in range(len(dchi_basline)):
+                grid1_ji = grid1[j, i]
+                grid2_ji = grid2[j, i]
+                D1_D1[j, i] = self.default_cosmo.Dg_norm(grid1_ji)
+                D2_D2[j, i] = self.default_cosmo.Dg_norm(grid2_ji)
+                F1_F1[j, i] = self.default_cosmo.Psi_normalizer(grid1_ji)
+                F2_F2[j, i] = self.default_cosmo.Psi_normalizer(grid2_ji)
+
+        Wg1_Wg1 = self.Wlensing(grid1, self.default_cosmo.chi(1100))
+        Wg2_Wg2 = self.Wlensing(grid2, self.default_cosmo.chi(1100))
+
+        return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, F1_F1, F2_F2
+    
+    def mesh_grid_generator_CMBlensing_chi12(self, Nchi1, Nchi2):
+        '''
+        Generating sampling mesh-grid according to chi1 and chi2
+        Params:
+        z1, z2: the redshifts of our objects
+        sigma1, sigma2: the dispersion of our window function
+        Nchi, Ndchi: fidicually chosen length of the sampling array
+
+        Return:
+        mesh-grids of chi_chi, dchi_dchi, 
+        and, growth factors D1_D1, D2_D2.
+        '''
+        chi_min = 0.1
+        chi_max = self.default_cosmo.chi(1101)
+        chi1_array = 10**np.array([np.log10(chi_min) + i*np.log10(chi_max/chi_min)/Nchi1 for i in range(Nchi1)])
+        chi2_array = 10**np.array([np.log10(chi_min) + i*np.log10(chi_max/chi_min)/Nchi2 for i in range(Nchi2)])
+        chi1_chi1, chi2_chi2 = np.meshgrid(chi1_array, chi2_array)
+        #dchi_array = np.array(list(-10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])[::-1])\
+                #+list(10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])))
+        #Create the sample grid
+        D1_array = np.array([self.default_cosmo.Dg_norm(chi1) for chi1 in chi1_array])
+        D2_array = np.array([self.default_cosmo.Dg_norm(chi2) for chi2 in chi2_array])
+        D1_D1, D2_D2 = np.meshgrid(D1_array, D2_array)
+
+        Wg1_Wg1 = self.Wlensing(chi1_chi1, self.default_cosmo.chi(1100))
+        Wg2_Wg2 = self.Wlensing(chi2_chi2, self.default_cosmo.chi(1100))
+        F1_F1 = self.default_cosmo.Psi_normalizer(chi1_chi1)
+        F2_F2 = self.default_cosmo.Psi_normalizer(chi2_chi2)
+
+        return chi1_chi1, chi2_chi2, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, F1_F1, F2_F2
+###################################################################################################
+#Some old and not directly used scripts
 '''
 default_cosmo = MyCosmology()
 
