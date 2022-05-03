@@ -7,6 +7,12 @@ Major functioning scripts are:
 2. Cosmology.py
 3. Calculation.py
 
+The method of using these scripts are described in example.ipynb
+
+The pre-caclulated full-sky and Limber data are stored in:
+1. Full-sky (.txt type)
+2. Limber   (.npy type)
+
 Required the packages are: 
 ### numpy, scipy, mpmath, Colossus, pyCAMB.
 
