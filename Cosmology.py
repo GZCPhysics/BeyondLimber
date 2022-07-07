@@ -1,7 +1,6 @@
 '''
 In this script, we define the cosmology class and the corresponding functions that we are going to use in the final calculation.
 '''
-
 from scipy.interpolate import interp1d
 from matplotlib import pyplot as plt
 import sys, platform, os
@@ -13,7 +12,7 @@ from scipy.integrate import quad as scquad
 from scipy.integrate import dblquad as scdblquad
 import time
 from scipy.integrate import simps
-
+from numpy import diff
 
 camb_path = os.path.realpath(os.path.join(os.getcwd(), '..'))
 sys.path.insert(0, camb_path)
@@ -31,7 +30,7 @@ class MyCosmology(object):
     #Here we have used pyCAMB package and colussus package to calculate all the cosmology related quantity
     #In order to make it more flexible, say, for CLASS people. They can just modify this scrip by replacing 
     #this class with other that you are familiar with.
-    def __init__(self, c=pa.c, zCMB=pa.zCMB, zmax=pa.zmax, h=pa.h, omch2=pa.omch2, ombh2=pa.ombh2, ns=pa.ns, s8=pa.s8):
+    def __init__(self, c=pa.c, zCMB=pa.zCMB, zmax=pa.zmax, h=pa.h, omch2=pa.omch2, ombh2=pa.ombh2, ns=pa.ns, s8=pa.s8, As = pa.As):
         self.c = c  #Speed of light, in unit of m/s
         self.zCMB = zCMB 
         self.zmax = zmax
@@ -43,32 +42,40 @@ class MyCosmology(object):
         self.Omm = omch2/h**2 + ombh2/h**2
         self.ns = ns
         self.s8 = s8
+        self.As = As
 
         #Setting up CAMB
         #Set up a new set of parameters for CAMB
         self.pars = camb.CAMBparams()
         #This function sets up CosmoMC-like settings, with one massive neutrino and helium set using BBN consistency
-        self.pars.set_cosmology(H0=self.h*100, ombh2=self.ombh2, omch2=self.omch2, mnu=0.06, omk=0, tau=0.06)
-        self.pars.InitPower.set_params(As=2.21536e-9, ns=self.ns, r=0)
+        self.pars.set_cosmology(H0=self.h*100, ombh2=self.ombh2, omch2=self.omch2, mnu=0.06, omk=0, tau=0.0561)
+        self.pars.InitPower.set_params(As=pa.As, ns=pa.ns, r=0)
         self.pars.set_for_lmax(2500, lens_potential_accuracy=1)
         self.pars.set_dark_energy(w=-1, wa=0, dark_energy_model='fluid')
+        self.pars.NonLinear = model.NonLinear_none
         self.results = camb.get_results(self.pars)
         #Setting up colossus
-        self.params = {'flat': True, 'H0': 100*h, 'Om0': self.Omm, 'Ob0': self.Omb, 'sigma8': self.s8, 'ns': self.ns}
-        cosmology.addCosmology('myCosmo', self.params)
-        self.cosmo = cosmology.setCosmology('myCosmo')
+        #self.params = {'flat': True, 'H0': 100*h, 'Om0': self.Omm, 'Ob0': self.Omb, 'sigma8': self.s8, 'ns': self.ns}
+        #cosmology.addCosmology('myCosmo', self.params)
+        self.cosmo = cosmology.setCosmology('planck18')
 
         #self.pkdata = np.loadtxt('/Users/cheng/Documents/Researches_at_Cambridge/Limber/1705 2/Mathematica/PCAMBz0.txt')
-        self.pkdata = np.loadtxt('./PCAMBz0 copy.txt')
+        self.pkdata = np.loadtxt('./pk_camb_planck18.txt')
         self.kh = self.pkdata[:,0]
         self.pk = self.pkdata[:,1]
         self.kappa_array = [-10.+0.01*i for i in range(int((-np.log(self.kh[0])/np.log(10.)+0.01)/0.01)+1)]
         self.lowkh = np.array([10**kappa for kappa in self.kappa_array])
-        self.Plowk = np.array([self.pk[0]*(10**kappa/self.kh.min())**self.ns for kappa in self.kappa_array])
+        self.Plowk = np.array([self.pk[0]*(10**kappa/self.kh.min())**pa.ns for kappa in self.kappa_array])
         self.kh_new = np.array(list(self.lowkh)+list(self.kh[0:]))
         self.Pk_new = np.array(list(self.Plowk)+list(self.pk[0:]))
         #Initialize the linear power spectrum P(kh) in our given universe
         self.Plin = interp1d(self.kh_new, self.Pk_new)
+
+        self.aa_array = np.e**np.array([np.log(1/1110)+np.log(1110)/10000*i for i in range(10000)])[::-1]
+        self.defchi_array = self.chi(1/self.aa_array-1)
+        self.Dg_array = self.Dg_norm(self.defchi_array)
+        self.f_array = diff(np.log(self.Dg_array))/diff(np.log(self.aa_array))
+        self.f_broad = interp1d(self.defchi_array[:-1], self.f_array)
 
     def chi(self, z):
         '''
@@ -116,7 +123,7 @@ class MyCosmology(object):
     def Dg_chi(self, chi):
         '''
         The unit of chi here is [Mpc/h].
-        Therefore, when applying the function of camb, we need to convert it to the unit of [Mpc]
+        Therefore, when applying the function of camb, we need to convert it to the unit of [Mpc], which has been encoded in red_at_chi()
         '''
         z = self.red_at_chi(chi)
         return self.cosmo.growthFactorUnnormalized(z)
@@ -126,6 +133,11 @@ class MyCosmology(object):
         This is the normalized growth factor
         '''
         return self.Dg_chi(chi)/self.Dg_z(0.00001)
+    
+    def f_norm(self, chi):
+
+        z = self.red_at_chi(chi)
+        return -self.cosmo.growthFactor(z, derivative=1)/self.cosmo.growthFactor(z, derivative=0)*(1+z)
     
     def Psi_normalizer(self, chi_x):
         '''
@@ -175,10 +187,10 @@ class Window_function(object):
 
 class Sampling(object):
 
-    def __init__(self, c=pa.c, zCMB=pa.zCMB, zmax=pa.zmax, h=pa.h, omch2=pa.omch2, ombh2=pa.ombh2, ns=pa.ns, s8=pa.s8):
+    def __init__(self, c=pa.c, zCMB=pa.zCMB, zmax=pa.zmax, h=pa.h, omch2=pa.omch2, ombh2=pa.ombh2, ns=pa.ns, s8=pa.s8, As = pa.As):
         
         #Introducing cosmology, where the parameters could vary and even the choice of cosmology class could be changed
-        self.default_cosmo = MyCosmology(c, zCMB, zmax, h, omch2, ombh2, ns, s8)
+        self.default_cosmo = MyCosmology(c, zCMB, zmax, h, omch2, ombh2, ns, s8, As)
         self.Wg = Window_function().Wg
         self.Wlensing = Window_function().Wlensing
     
@@ -268,8 +280,8 @@ class Sampling(object):
         chi_sigma1 = sigma1/self.default_cosmo.HH(z1)
         chi_sigma2 = sigma2/self.default_cosmo.HH(z2)
         chi_min = max(100, chi_avg1-4*chi_sigma1)
-        chi_max = min(self.default_cosmo.chi(1100), chi_avg2+chi_sigma2*4)
-        chi_array = np.array([chi_min + i*(chi_max-chi_min)/Nchi for i in range(Nchi)])
+        chi_max = min(self.default_cosmo.chi(1090), chi_avg2+chi_sigma2*4)
+        chi_array = np .array([chi_min + i*(chi_max-chi_min)/Nchi for i in range(Nchi)])
         dchi_basline = np.arange(2*Ndchi)
         D1_D1 = np.zeros((2*Ndchi, Nchi))
         D2_D2 = np.zeros((2*Ndchi, Nchi))
@@ -310,7 +322,7 @@ class Sampling(object):
         and, growth factors D1_D1, D2_D2.
         '''
         chi_min = 100.0
-        chi_max = self.default_cosmo.chi(1100)
+        chi_max = self.default_cosmo.chi(1090)
         chi_array = np.array([chi_min + i*(chi_max-chi_min)/Nchi for i in range(Nchi)])
         dchi_basline = np.arange(2*Ndchi+2)
         D1_D1 = np.zeros((2*Ndchi+2, Nchi))
@@ -321,7 +333,7 @@ class Sampling(object):
         chi_chi, dchi_dchi_raw = np.meshgrid(chi_array, dchi_basline)
         dchi_dchi_list = []
         for i in range(Nchi):
-            dchi_max = min(2*chi_array[i], 2*(self.default_cosmo.chi(2200)-chi_array[i])) #We can change the maximum comoving distance, but note there are actually upper limit in colossus code
+            dchi_max = min(2*chi_array[i], 2*(self.default_cosmo.chi(2180)-chi_array[i])) #We can change the maximum comoving distance, but note there are actually upper limit in colossus code
             dchi_array = list(-10**np.array([-2+(np.log10(dchi_max-100)+2)/Ndchi*j for j in range(Ndchi+1)])[::-1])\
                 +list(10**np.array([-2+(np.log10(dchi_max-100)+2)/Ndchi*j for j in range(Ndchi+1)]))
             dchi_dchi_list.append(dchi_array)
@@ -339,8 +351,8 @@ class Sampling(object):
                 F1_F1[j, i] = self.default_cosmo.Psi_normalizer(grid1_ji)
                 F2_F2[j, i] = self.default_cosmo.Psi_normalizer(grid2_ji)
 
-        Wg1_Wg1 = self.Wlensing(grid1, self.default_cosmo.chi(1100))
-        Wg2_Wg2 = self.Wlensing(grid2, self.default_cosmo.chi(1100))
+        Wg1_Wg1 = self.Wlensing(grid1, self.default_cosmo.chi(1090))
+        Wg2_Wg2 = self.Wlensing(grid2, self.default_cosmo.chi(1090))
 
         return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, F1_F1, F2_F2
     
@@ -357,7 +369,7 @@ class Sampling(object):
         and, growth factors D1_D1, D2_D2.
         '''
         chi_min = 0.1
-        chi_max = self.default_cosmo.chi(1101)
+        chi_max = self.default_cosmo.chi(1091)
         chi1_array = 10**np.array([np.log10(chi_min) + i*np.log10(chi_max/chi_min)/Nchi1 for i in range(Nchi1)])
         chi2_array = 10**np.array([np.log10(chi_min) + i*np.log10(chi_max/chi_min)/Nchi2 for i in range(Nchi2)])
         chi1_chi1, chi2_chi2 = np.meshgrid(chi1_array, chi2_array)

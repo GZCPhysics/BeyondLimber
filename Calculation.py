@@ -86,8 +86,8 @@ def power_calc_sampling(l, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2
     Return:
     The angular power spetrum at mutiple l.
     '''
-    xx = dchi_dchi *l/(chi_chi+0.5*dchi_dchi)
-    l_tilde = l/(chi_chi+0.5*dchi_dchi)
+    xx = dchi_dchi *l/chi_chi/np.sqrt(1-(0.5*dchi_dchi/chi_chi)**2)
+    l_tilde = l/chi_chi/np.sqrt(1-(0.5*dchi_dchi/chi_chi)**2)
     Cl_array_array = np.array([ (c_array[i]*(func_real_list[i](np.abs(xx))+1j*func_imag_list[i](np.abs(xx))))*\
         np.abs(l_tilde)**(nu_n_array[i]+1) for i in range(int(Nmax)+1)])
     '''
@@ -141,8 +141,8 @@ def power_calc_sampling_mod(l, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2
     Return:
     The angular power spetrum at mutiple l.
     '''
-    xx = dchi_dchi *np.sqrt(l*(l+1))/(chi_chi+0.5*dchi_dchi)/(1-(dchi_dchi/2/chi_chi))
-    l_tilde = np.sqrt(l*(l+1))/(chi_chi+0.5*dchi_dchi)/(1-(dchi_dchi/2/chi_chi))
+    xx = dchi_dchi *np.sqrt(l*(l+1))/chi_chi/np.sqrt(1-(dchi_dchi/2/chi_chi)**2)
+    l_tilde = np.sqrt(l*(l+1))/chi_chi/np.sqrt(1-(dchi_dchi/2/chi_chi)**2)
     
     Cl_array_array = np.array([ (c_array[i]*(func_real_list[i](np.abs(xx))+1j*func_imag_list[i](np.abs(xx))))*\
         np.abs(l_tilde)**(nu_n_array[i]+1) for i in range(int(Nmax)+1)])
@@ -192,14 +192,14 @@ def power_calc_sampling_CMBlensing(l, chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W
     Return:
     The angular power spetrum at mutiple l.
     '''
-    xx = dchi_dchi *l/(chi_chi+0.5*dchi_dchi)
-    l_tilde = l/(chi_chi+0.5*dchi_dchi)
+    xx = dchi_dchi *l/chi_chi/np.sqrt(1-(0.5*dchi_dchi/chi_chi)**2)
+    l_tilde = l/chi_chi/np.sqrt(1-(0.5*dchi_dchi/chi_chi)**2)
     
     Cl_array_array = np.array([ (c_array[i]*(func_real_list1[i](np.abs(xx))+1j*func_imag_list1[i](np.abs(xx))))*\
         np.abs(l_tilde)**(nu_n_array[i]+1-4) for i in range(int(Nmax)+1)])
     
     #Cl_array_array[np.isnan(Cl_array_array)]=0.
-    Cl_array = np.sum(Cl_array_array, axis=0)*(1-(dchi_dchi/2/chi_chi))**2/(1+(dchi_dchi/2/chi_chi))**2
+    Cl_array = np.sum(Cl_array_array, axis=0) #*(1-(dchi_dchi/2/chi_chi))**2/(1+(dchi_dchi/2/chi_chi))**2
 
     Simp_array = F1_F1*F2_F2*D1_D1*D2_D2*Cl_array*W1_W1*W2_W2/(chi_chi)**2
     intover_dchi = np.array([simps(Simp_array[:,i], dchi_dchi[:,i]) for i in range(len(chi_chi[0,:]))])
@@ -243,14 +243,14 @@ def power_calc_sampling_CMBlensing_mod(l, chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W
     The angular power spetrum at mutiple l.
     '''
     
-    xx = dchi_dchi *np.sqrt(l*(l+1))/(chi_chi+0.5*dchi_dchi)/(1-(dchi_dchi/2/chi_chi))
-    l_tilde = np.sqrt(l*(l+1))/(chi_chi+0.5*dchi_dchi)/(1-(dchi_dchi/2/chi_chi))
+    xx = dchi_dchi *np.sqrt(l*(l+1))/chi_chi/np.sqrt(1-(dchi_dchi/2/chi_chi)**2)
+    l_tilde = np.sqrt(l*(l+1))/chi_chi/np.sqrt(1-(dchi_dchi/2/chi_chi)**2)
 
     Cl_array_array = np.array([ (c_array[i]*(func_real_list1[i](np.abs(xx))+1j*func_imag_list1[i](np.abs(xx))))*\
         np.abs(l_tilde)**(nu_n_array[i]+1-4) for i in range(int(Nmax)+1)])
     
 
-    Cl_array = np.sum(Cl_array_array, axis=0)*(1-(dchi_dchi/2/chi_chi))**2/(1+(dchi_dchi/2/chi_chi))**2
+    Cl_array = np.sum(Cl_array_array, axis=0)#*(1-(dchi_dchi/2/chi_chi))**2/(1+(dchi_dchi/2/chi_chi))**2
 
     Simp_array = F1_F1*F2_F2*D1_D1*D2_D2*Cl_array*W1_W1*W2_W2/(chi_chi)**2
     intover_dchi = np.array([simps(Simp_array[:,i], dchi_dchi[:,i]) for i in range(len(chi_chi[0,:]))])
