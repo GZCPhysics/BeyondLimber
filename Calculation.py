@@ -291,13 +291,13 @@ def Pk_potent1(kh):
 
 def Power_spectrum(kh_par, l, chi, dchi):
 
-    kh = np.sqrt(kh_par**2 + (l/(chi+0.5*dchi))**2)
+    kh = np.sqrt(kh_par**2 + (l/(chi))**2)
 
     return Pk_potent(kh)
 
 def Power_spectrum_CMBlensing(kh_par, l, chi, dchi):
 
-    kh = np.sqrt(kh_par**2 + (l/(chi+0.5*dchi))**2)
+    kh = np.sqrt(kh_par**2 + (l/(chi))**2)
 
     return Pk_potent1(kh)
 
@@ -305,7 +305,7 @@ def Kernel_Limber(l, chi, chi_avg1, chi_sigma1, chi_avg2, chi_sigma2):
     
     W1 = sampling_cosmo.Wg(chi, chi_avg1, chi_sigma1)
     W2 = sampling_cosmo.Wg(chi, chi_avg2, chi_sigma2)
-    D1 = sampling_cosmo.default_cosmo.Dg_norm(chi)
+    D1 = sampling_cosmo.D_class(chi)
     C = Power_spectrum(kh_par=0, l=l, chi=chi, dchi=0)
 
     return D1*D1*W1*W2*C
@@ -322,7 +322,8 @@ def Limber_CMBlensing(l, chi_min, chi_star):
 
     def integrand(chi):
         W1 = sampling_cosmo.Wlensing(chi, chi_star)
-        D1 = sampling_cosmo.default_cosmo.Dg_norm(chi)
+        #D1 = sampling_cosmo.default_cosmo.Dg_norm(chi)
+        D1 = sampling_cosmo.D_class(chi)
         F1 = sampling_cosmo.default_cosmo.Psi_normalizer(chi)
 
         return Power_spectrum_CMBlensing(0, l, chi, 0) * (W1**2) * (D1**2) * (F1**2) /chi**2
