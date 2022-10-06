@@ -621,13 +621,16 @@ def power_calc_separate(l, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2
 if __name__ == '__main__':
 
     #We test multiprocessing here
-    
-    Mesh_file_name = './Mesh_Planck18/Mesh_1125_RSD.npy'
+    name = sys.argv[1]
+    Mesh_file_name = './Mesh_Planck18/Mesh_'+name+'_RSD.npy'
+    print(Mesh_file_name)
+   
     chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, f1_f1, f2_f2 = np.load(Mesh_file_name)
     
-    l_list = [2 + 2*i for i in range(7)]
+    #l_list = [2 + 2*i for i in range(7)]
+    l_list = [2+2*i for i in range(7)] + [15, 18, 20, 23, 27, 31, 36, 41, 47, 54, 63, 72, 83, 95, 109, 125, 144, 165, 190, 218, 250, 287, 330, 379, 435, 500]
     '''
-    path = './Half_mesh_1125/'
+    path = './Half_mesh_11/'
     for li in l_list:
         p1 = mp.Process(target=save_half_mesh, args=(li, chi_chi, dchi_dchi, 1, path))
         p2 = mp.Process(target=save_half_mesh, args=(li, chi_chi, dchi_dchi, 2, path))
@@ -657,15 +660,18 @@ if __name__ == '__main__':
         p8.join()
     '''
     Cl_list = []
+    
     for li in l_list:
-        path1 = './Half_mesh_1125/I_func1_l%d.npy'%li
-        path2 = './Half_mesh_1125/I_func2_l%d.npy'%li
-        path3 = './Half_mesh_1125/I_func3_l%d.npy'%li
-        path4 = './Half_mesh_1125/I_func4_l%d.npy'%li
-        path5 = './Half_mesh_1125/I_func5_l%d.npy'%li
-        path6 = './Half_mesh_1125/I_func6_l%d.npy'%li
-        path7 = './Half_mesh_1125/I_func7_l%d.npy'%li
-        path8 = './Half_mesh_1125/I_func8_l%d.npy'%li
+        path1 = './Half_mesh_'+ name +'/I_func1_l%d.npy'%li
+        path2 = './Half_mesh_'+ name +'/I_func2_l%d.npy'%li
+        path3 = './Half_mesh_'+ name +'/I_func3_l%d.npy'%li
+        path4 = './Half_mesh_'+ name +'/I_func4_l%d.npy'%li
+        path5 = './Half_mesh_'+ name +'/I_func5_l%d.npy'%li
+        path6 = './Half_mesh_'+ name +'/I_func6_l%d.npy'%li
+        path7 = './Half_mesh_'+ name +'/I_func7_l%d.npy'%li
+        path8 = './Half_mesh_'+ name +'/I_func8_l%d.npy'%li
+        
+        print(path1)
 
         Cli1 = Equation1(li, chi_chi, dchi_dchi, f1_f1, f2_f2, Wg1_Wg1, Wg2_Wg2, c_n_array, path1)
         Cli2 = Equation2(li, chi_chi, dchi_dchi, f1_f1, f2_f2, Wg1_Wg1, Wg2_Wg2, c_n_array, path2)
@@ -681,10 +687,10 @@ if __name__ == '__main__':
         Cli = Cli1+Cli2+Cli3+Cli4+Cli5+Cli6+Cli7+Cli8+Cli9
 
 
-        Cl_list.append([Cli,Cli1,Cli2,Cli3,Cli4,Cli5,Cli6,Cli7,Cli8,Cli9])
+        Cl_list.append([li,Cli,Cli1,Cli2,Cli3,Cli4,Cli5,Cli6,Cli7,Cli8,Cli9])
     
-    np.save('./Cl_1125_RSD_test', Cl_list)
-
+    np.save('./Cl_%s_RSD_test'%name, Cl_list)
+    
 
 
 
