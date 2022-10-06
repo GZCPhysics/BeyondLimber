@@ -14,7 +14,7 @@ The pre-caclulated full-sky and Limber data are stored in:
 2. Limber   (.npy type)
 
 Required the packages are: 
-### numpy, scipy, mpmath, Colossus, pyCAMB.
+### numpy, scipy, mpmath, Colossus, pyCAMB, CLASS.
 
 The choice of cosmology related functions could be replaced with anything users are familiar with.
 
