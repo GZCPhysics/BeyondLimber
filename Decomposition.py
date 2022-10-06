@@ -39,7 +39,7 @@ def M1i(x_i, nu_i):
     number = (2 * x_i)**(0.5*nu_i+0.5)*np_besselk(-0.5-0.5*nu_i, x_i)*np_rgamma(-0.5*nu_i)/np.sqrt(np.pi)
     return np.array([num.real for num in number]), np.array([num.imag for num in number])
 
-def special_func_interp(nu_n_array, x_array, Nmax):
+def special_func1_interp(nu_n_array, x_array, Nmax, Mi):
     '''
     Contains of a list of interpolated real functions, corresponding to the real part and imaginary part of the modifed function
     '''
@@ -48,7 +48,7 @@ def special_func_interp(nu_n_array, x_array, Nmax):
     
     for i in range(1, int(Nmax/2)+1):  #Here we only take half of the coeffecient array, since it is symmetric
         nu_i = nu_n_array[i+int(Nmax/2)]
-        y_real_array, y_imag_array = M1i(x_array, nu_i)
+        y_real_array, y_imag_array = Mi(x_array, nu_i)
         func_real_list.append(interp1d(x_array, y_real_array))
         func_imag_list.append(interp1d(x_array, y_imag_array))
     '''
@@ -78,13 +78,6 @@ def special_func2_interp(nu_n_array, x_array, Nmax):
     '''
     func_real_list = []
     func_imag_list = []
-    '''
-    for i in range(1, int(Nmax/2)+1):  #Here we only take half of the coeffecient array, since it is symmetric
-        nu_i = nu_n_array[i+int(Nmax/2)]
-        y_real_array, y_imag_array = M2i(x_array, nu_i)
-        func_real_list.append(interp1d(x_array, np.array(y_real_array)))
-        func_imag_list.append(interp1d(x_array, np.array(y_imag_array)))
-    '''
 
     for i in range(int(Nmax)+1):  #Here we only take half of the coeffecient array, since it is symmetric
         nu_i = nu_n_array[i]
@@ -130,6 +123,86 @@ def special_func_lensing_interp(nu_n_array, x_array, Nmax):
         func_imag_list.append(interp1d(x_array, y_imag_array))
     
     return func_real_list, func_imag_list
+
+#Functions for galaxy clustering RSD scenario
+#################################################################################################################
+def K2i(x_i, nu_i):
+    '''
+    For x_i not equal to zero.
+    In order to avoid the dchi=0 pole in the following calculation
+    '''
+    number = np_besselk(-0.5-0.5*nu_i, x_i)*x_i**(-0.5-0.5*nu_i)
+    return np.array([complex(num.real+1j*num.imag) for num in number])
+
+def K3i(x_i, nui):
+    '''
+    For x_i not equal to zero.
+    In order to avoid the dchi=0 pole in the following calculation
+    '''
+    nu_i=nui-2
+
+    return K2i(x_i, nu_i)
+
+def K4i(x_i, nui):
+    '''
+    For x_i not equal to zero.
+    In order to avoid the dchi=0 pole in the following calculation
+    '''
+    nu_i=nui-4
+    return K2i(x_i, nu_i)
+
+def M2i_interp(x_array, nu_n_array, K2i_array, Nmax):
+    '''
+    For x_i not equal to zero.
+    In order to avoid the dchi=0 pole in the following calculation
+    '''
+    func_real_list = []
+    func_imag_list = []
+    for i in range(int(Nmax)+1):  #Here we only take half of the coeffecient array, since it is symmetric
+        nu_i = nu_n_array[i]
+        Prefactor = complex(2**(0.5*nu_i+0.5)*np_rgamma(-0.5*nu_i)/np.sqrt(np.pi))
+        y_array = Prefactor*K2i_array[i]
+        #y_real_array, y_imag_array = Prefactor*K2i_array[i].real, Prefactor*K2i_array[i].imag
+        #y_real_0, y_imag_0 = M2i(np.array([1e-6]), nu_i) #This should be improved to actual 0 in the short future
+        func_real_list.append(interp1d(x_array, y_array.real))
+        func_imag_list.append(interp1d(x_array, y_array.imag))
+    
+    return func_real_list, func_imag_list
+
+def M3i_interp(x_array, nu_n_array, K2i_array, K3i_array, Nmax):
+    '''
+    For x_i not equal to zero.
+    In order to avoid the dchi=0 pole in the following calculation
+    '''
+    func_real_list = []
+    func_imag_list = []
+    for i in range(int(Nmax)+1):  #Here we only take half of the coeffecient array, since it is symmetric
+        nu_i = nu_n_array[i]
+        Prefactor = -complex(2**(0.5*nu_i-0.5)*np_rgamma(-0.5*nu_i+1)/np.sqrt(np.pi))
+        y_array = Prefactor*(K3i_array[i] + nu_i*K2i_array[i])
+        #y_real_0, y_imag_0 = M2i(np.array([1e-6]), nu_i) #This should be improved to actual 0 in the short future
+        func_real_list.append(interp1d(x_array, y_array.real))
+        func_imag_list.append(interp1d(x_array, y_array.imag))
+    
+    return func_real_list, func_imag_list
+
+def M4i_interp(x_array, nu_n_array, K2i_array, K3i_array, K4i_array, Nmax):
+    '''
+    For x_i not equal to zero.
+    In order to avoid the dchi=0 pole in the following calculation
+    '''
+    func_real_list = []
+    func_imag_list = []
+    for i in range(int(Nmax)+1):  #Here we only take half of the coeffecient array, since it is symmetric
+        nu_i = nu_n_array[i]
+        Prefactor = complex(2**(0.5*nu_i-1.5)*np_rgamma(-0.5*nu_i+2)/np.sqrt(np.pi))
+        y_array = Prefactor*(K4i_array[i] + 2*(nu_i-2)*K3i_array[i] + nu_i*(nu_i-2)*K2i_array[i])
+        #y_real_0, y_imag_0 = M2i(np.array([1e-6]), nu_i) #This should be improved to actual 0 in the short future
+        func_real_list.append(interp1d(x_array, y_array.real))
+        func_imag_list.append(interp1d(x_array, y_array.imag))
+    
+    return func_real_list, func_imag_list
+
 
 '''
 #Here we do the pre-calulcation of all these modifed functions, given the ith expansion term
