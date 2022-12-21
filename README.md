@@ -20,4 +20,4 @@ Required the packages are:
 
 The choice of cosmology related functions could be replaced with anything users are familiar with.
 
-All the flat-sky calculations are based on Gaussian window function. In practice, as long as you have two mesh-grids of targeting sources on Windows, Growth factors... you can use \textit{power_calc_sampling}-like functions in Calculation.py and Calculation_RSD.py to calculate.
+All the flat-sky calculations are based on Gaussian window function. In practice, as long as you have two mesh-grids of targeting sources on Windows, Growth factors... you can use **power_calc_sampling**-like functions in **Calculation.py** and **Calculation_RSD.py** to calculate.
