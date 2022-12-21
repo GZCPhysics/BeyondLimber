@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 import sys, platform, os
 import numpy as np
 from colossus.cosmology import cosmology
+sys.path.append('./cosmo_params/')
 import params as pa
 import cmath
 from scipy.integrate import quad as scquad
@@ -57,8 +58,12 @@ class MyCosmology(object):
         self.pars.set_for_lmax(2500, lens_potential_accuracy=1)
         self.pars.set_dark_energy(w=-1, wa=0, dark_energy_model='fluid')
         self.pars.NonLinear = model.NonLinear_none
+        self.pars.set_matter_power(redshifts=[0.,0.8], kmax=200.0*self.h)
         self.results = camb.get_results(self.pars)
-
+        
+        #Linear spectra
+        #self.kh, _, self._pk = self.results.get_matter_power_spectrum(minkh=1e-4, maxkh=200.0, npoints = 200)
+        #self.pk = self._pk[0,:]
         self.LambdaCDM = Class()
         # pass input parameters
         self.LambdaCDM.set({'omega_b':self.ombh2,'omega_cdm':self.omch2,'h':self.h,'A_s':self.As,'n_s':self.ns,'tau_reio':self.tau})
@@ -71,7 +76,7 @@ class MyCosmology(object):
         self.cosmo = cosmology.setCosmology('planck18')
 
         #self.pkdata = np.loadtxt('/Users/cheng/Documents/Researches_at_Cambridge/Limber/1705 2/Mathematica/PCAMBz0.txt')
-        self.pkdata = np.loadtxt('./pk_camb_planck18.txt')
+        self.pkdata = np.loadtxt('./cosmo_params/pk_camb_planck18.txt')
         self.kh = self.pkdata[:,0]
         self.pk = self.pkdata[:,1]
         self.kappa_array = [-10.+0.01*i for i in range(int((-np.log(self.kh[0])/np.log(10.)+0.01)/0.01)+1)]
