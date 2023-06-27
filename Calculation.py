@@ -4,6 +4,8 @@ from scipy.integrate import simps
 import Decomposition as DC
 import Cosmology as Csm
 from scipy.integrate import quad
+import importlib
+importlib.reload(Csm)
 
 #########################################################
 #Precalculating all the cosmology terms
@@ -14,7 +16,7 @@ khmax = 52.0
 Nmax = 200
 #c_n_array = sampling_cosmo.CoeffTransfer(sampling_cosmo.default_cosmo.Plin, 0, 0, Nmax, khmin, khmax)[:, 0]
 #nu_n_array = sampling_cosmo.CoeffTransfer(sampling_cosmo.default_cosmo.Plin, 0, 0, Nmax, khmin, khmax)[:, 1]
-nu_n_array = np.load('./cosmo_params/nu_n_array.npy')
+nu_n_array = np.load('/Users/cheng/Documents/Researches_at_Cambridge/Limber/1705Python/Package/cosmo_params/nu_n_array.npy')
 #print('Linear Power Spectrum at z=0 expanded. The number of expansion terms is: %d'%len(c_n_array))
 
 #########################################################
@@ -39,6 +41,7 @@ def special_func_generator(x_min = 1e-7, x_max = 1e7, N_sample = 2000, nu_n_arra
     #Sampling in log scale, changing the sampling points will significantly change the time of evaluation
     Nmax_in = int(len(nu_n_array)-1)
     #nu_n_array = DC.nu_n_array
+    print('New Import')
     print('Number of interpolation sampling points are:', N_sample)
     print('Modified arguments are in the interval of', '[', x_min, ',', x_max, ']')
     print('Creating the modified functions...')
@@ -232,7 +235,7 @@ def power_calc_sampling_CMBlensing(l, chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W
     results = simps(intover_dchi, chi_chi[0, :])
     return results
 
-def full_calc_sampling_CMBlensing(l_array, Nchi, Ndchi, c_array, nu_n_array, func_real_list1, func_imag_list1):
+def full_calc_sampling_CMBlensing(l_array, Nchi, Ndchi, z_source, c_array, nu_n_array, func_real_list1, func_imag_list1):
     '''
     Params:
     l_array: The array of multiples we have chosen to consider
@@ -244,7 +247,7 @@ def full_calc_sampling_CMBlensing(l_array, Nchi, Ndchi, c_array, nu_n_array, fun
     '''
     
     start1 = time.time()
-    chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2 = sampling_cosmo.mesh_grid_generator_CMBlensing(Nchi, Ndchi)
+    chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2 = sampling_cosmo.mesh_grid_generator_CMBlensing(Nchi, Ndchi, z_source)
     end1 = time.time()-start1
     print('Time for preparing mesh-grids is:', end1, 's')
     start2 = time.time()
@@ -290,7 +293,7 @@ def power_calc_sampling_CMBlensing_mod(l, chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W
     results = simps(intover_dchi, chi_chi[0, :])
     return results
 
-def full_calc_sampling_CMBlensing_mod(l_array, Nchi, Ndchi, c_array, nu_n_array, func_real_list1, func_imag_list1):
+def full_calc_sampling_CMBlensing_mod(l_array, Nchi, Ndchi, z_source, c_array, nu_n_array, func_real_list1, func_imag_list1):
     '''
     Params:
     l_array: The array of multiples we have chosen to consider
@@ -301,7 +304,7 @@ def full_calc_sampling_CMBlensing_mod(l_array, Nchi, Ndchi, c_array, nu_n_array,
     An list of angular power spectrum given l_array
     '''
     start1 = time.time()
-    chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2 = sampling_cosmo.mesh_grid_generator_CMBlensing(Nchi, Ndchi)
+    chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2 = sampling_cosmo.mesh_grid_generator_CMBlensing(Nchi, Ndchi, z_source)
     end1 = time.time()-start1
     print('Time for preparing mesh-grids is:', end1, 's')
     start2 = time.time()
@@ -310,6 +313,46 @@ def full_calc_sampling_CMBlensing_mod(l_array, Nchi, Ndchi, c_array, nu_n_array,
     print('Time for calculating each l is:', end2, 's')
 
     return power_array
+
+###################################################################################################################
+#Without radial derivative
+def power_calc_sampling_CMBlensing_wo_rad(l, chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2, c_array, nu_n_array, func_real_list1, func_imag_list1):
+    '''
+    This is the calculation of approximation of lensing potential without the radial derivative
+    Params:
+    The same as other functions
+    Only that for the func_real_list1 and func_imag_list1 we shall use the matter power spectrum ones
+
+    Return:
+    The angular power spetrum at mutiple l.
+    '''
+    Nmax = int(len(nu_n_array)-1)
+    xx = dchi_dchi *np.sqrt(l*(l+1))/chi_chi/np.sqrt(1-(dchi_dchi/2/chi_chi)**2)
+    l_tilde = np.sqrt(l*(l+1))/chi_chi/np.sqrt(1-(dchi_dchi/2/chi_chi)**2)
+    Cl_array_0 = (c_array[int(Nmax/2)]*(func_real_list1[int(Nmax/2)](np.abs(xx))+1j*func_imag_list1[int(Nmax/2)](np.abs(xx))))*\
+        np.abs(l_tilde)**(nu_n_array[int(Nmax/2)]+1)
+    Cl_array_array = np.array([ (c_array[i+int(Nmax/2)]*(func_real_list1[i+int(Nmax/2)](np.abs(xx))+1j*func_imag_list1[i+int(Nmax/2)](np.abs(xx))))*\
+        np.abs(l_tilde)**(nu_n_array[i+int(Nmax/2)]+1) for i in range(1, int(Nmax/2)+1)])
+    
+    Cl_array = Cl_array_0 + 2*np.sum(Cl_array_array, axis=0)
+    Simp_array = F1_F1*F2_F2*D1_D1*D2_D2*Cl_array.real*(chi_chi)**2 * (1-(dchi_dchi/2/chi_chi)**2)**1/ (l*(l+1))**2 *W1_W1*W2_W2 
+    intover_dchi = np.array([simps(Simp_array[:,i], dchi_dchi[:,i]) for i in range(len(chi_chi[0,:]))])
+    results = simps(intover_dchi, chi_chi[0, :])
+    return results
+
+def full_calc_sampling_CMBlensing_wo_rad(l_array, Nchi, Ndchi, z_source, c_array, nu_n_array, func_real_list1, func_imag_list1):
+    
+    start1 = time.time()
+    chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2 = sampling_cosmo.mesh_grid_generator_CMBlensing(Nchi, Ndchi, z_source)
+    end1 = time.time()-start1
+    print('Time for preparing mesh-grids is:', end1, 's')
+    start2 = time.time()
+    power_array = [power_calc_sampling_CMBlensing_wo_rad(li, chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2, c_array, nu_n_array, func_real_list1, func_imag_list1).real for li in l_array]
+    end2 = (time.time()-start2)/len(l_array)
+    print('Time for calculating each l is:', end2, 's')
+
+    return power_array
+
 
 ###################################################################################################################
 #Limber's approximation
@@ -359,7 +402,7 @@ def Limber_CMBlensing(l, chi_min, chi_star):
         D1 = sampling_cosmo.D_class(chi)
         F1 = sampling_cosmo.default_cosmo.Psi_normalizer(chi)
 
-        return Power_spectrum_CMBlensing(0, l, chi, 0) * (W1**2) * (D1**2) * (F1**2) /chi**2
+        return sampling_cosmo.default_cosmo.Plin(l/chi)*chi**2/l**4 * (W1**2) * (D1**2) * (F1**2)
     
     return quad(integrand, chi_min, chi_star)[0]
 
