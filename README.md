@@ -11,7 +11,7 @@ Major functioning scripts are:
 The method of using these scripts are described in example.ipynb
 
 The full-sky angular power spectra are pre-calculated and stored in:
-1. /Full-sky/ (.txt type for clustering, .npy type for RSD)
+1. ./Full-sky/ (.txt type for clustering, .npy type for RSD)
 
 Note that all the angular power spectra are calculated based on the power spectrum given in /cosmo_params/pk_camb_planck18.txt
 
