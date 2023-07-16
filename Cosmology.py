@@ -5,7 +5,7 @@ from scipy.interpolate import interp1d
 from matplotlib import pyplot as plt
 import sys, platform, os
 import numpy as np
-from colossus.cosmology import cosmology
+#from colossus.cosmology import cosmology
 sys.path.append('./cosmo_params/')
 import params as pa
 import cmath
@@ -55,35 +55,37 @@ class MyCosmology(object):
         #This function sets up CosmoMC-like settings, with one massive neutrino and helium set using BBN consistency
         self.pars.set_cosmology(H0=self.h*100, ombh2=self.ombh2, omch2=self.omch2, mnu=0.06, omk=0, tau=self.tau)
         self.pars.InitPower.set_params(As=self.As, ns=self.ns, r=0)
-        self.pars.set_for_lmax(2500, lens_potential_accuracy=1)
+        self.pars.set_for_lmax(2500, lens_potential_accuracy=4)
         self.pars.set_dark_energy(w=-1, wa=0, dark_energy_model='fluid')
         self.pars.NonLinear = model.NonLinear_none
         self.pars.set_matter_power(redshifts=[0.,0.8], kmax=200.0*self.h)
         self.results = camb.get_results(self.pars)
         
         #Linear spectra
-        #self.kh, _, self._pk = self.results.get_matter_power_spectrum(minkh=1e-4, maxkh=200.0, npoints = 200)
-        #self.pk = self._pk[0,:]
+        self.kh, _, self._pk = self.results.get_matter_power_spectrum(minkh=1e-4, maxkh=200.0, npoints = 200)
+        self.pk = self._pk[0,:]
         self.LambdaCDM = Class()
         # pass input parameters
         self.LambdaCDM.set({'omega_b':self.ombh2,'omega_cdm':self.omch2,'h':self.h,'A_s':self.As,'n_s':self.ns,'tau_reio':self.tau})
-        self.LambdaCDM.set({'output':'tCl,pCl,lCl,mPk','lensing':'yes','P_k_max_1/Mpc':3.0})
+        self.LambdaCDM.set({'output':'tCl,pCl,lCl,mPk','lensing':'yes','P_k_max_1/Mpc':200.0})
         # run class
         self.LambdaCDM.compute()
         #Setting up colossus
         #self.params = {'flat': True, 'H0': 100*h, 'Om0': self.Omm, 'Ob0': self.Omb, 'sigma8': self.s8, 'ns': self.ns}
         #cosmology.addCosmology('myCosmo', self.params)
-        self.cosmo = cosmology.setCosmology('planck18')
+        #self.cosmo = cosmology.setCosmology('planck18')
 
         #self.pkdata = np.loadtxt('/Users/cheng/Documents/Researches_at_Cambridge/Limber/1705 2/Mathematica/PCAMBz0.txt')
-        self.pkdata = np.loadtxt('./cosmo_params/pk_camb_planck18.txt')
-        self.kh = self.pkdata[:,0]
-        self.pk = self.pkdata[:,1]
+        #self.pkdata = np.loadtxt('/Users/cheng/Documents/Researches_at_Cambridge/Limber/1705Python/Package/cosmo_params/pk_camb_planck18.txt')
+        #self.kh = self.pkdata[:,0]
+        #self.pk = self.pkdata[:,1]
         self.kappa_array = [-10.+0.01*i for i in range(int((-np.log(self.kh[0])/np.log(10.)+0.01)/0.01)+1)]
         self.lowkh = np.array([10**kappa for kappa in self.kappa_array])
         self.Plowk = np.array([self.pk[0]*(10**kappa/self.kh.min())**pa.ns for kappa in self.kappa_array])
         self.kh_new = np.array(list(self.lowkh)+list(self.kh[0:]))
         self.Pk_new = np.array(list(self.Plowk)+list(self.pk[0:]))
+        #self.pk_interp = interp1d(self.kh, self.pk)
+        #self.Plin = np.vectorize(self.Plin_vec)
         #Initialize the linear power spectrum P(kh) in our given universe
         self.Plin = interp1d(self.kh_new, self.Pk_new)
         
@@ -93,6 +95,16 @@ class MyCosmology(object):
         self.f_array = diff(np.log(self.Dg_array))/diff(np.log(self.aa_array))
         self.f_broad = interp1d(self.defchi_array[:-1], self.f_array)
 
+    def Plin_vec(self, kh):
+
+        if kh<(1e-4/pa.h):
+                return 0 
+        if kh>(10/pa.h):
+                return 0
+        
+        else:
+                return self.pk_interp(kh)
+    
     def chi(self, z):
         '''
         Here we only consider the radial comoving distance, 
@@ -100,7 +112,8 @@ class MyCosmology(object):
 
         The returned unit is [Mpc/h]
         '''
-        return self.cosmo.comovingDistance(z_min=0.0, z_max=z, transverse=False)
+        return self.results.comoving_radial_distance(z)*self.h
+        #return self.cosmo.comovingDistance(z_min=0.0, z_max=z, transverse=False)
     
     def red_at_chi(self, chi_x):
         '''
@@ -126,34 +139,9 @@ class MyCosmology(object):
         '''
         Here the returned value has a unit of [h/Mpc]
         '''
-        #return results.hubble_parameter(z)/(c*1e-3*h) #Update to this if we could define a camb environment
-        return self.cosmo.Hz(z)/(self.c*1e-3*self.h)
+        return self.results.hubble_parameter(z)/(self.c*1e-3*self.h) #Update to this if we could define a camb environment
+        #return self.cosmo.Hz(z)/(self.c*1e-3*self.h)
     
-    #Now we define the growth factors
-    def Dg_z(self, z):
-        '''
-        This is the unnormalized growth factor given a redshift z
-        '''
-        return self.cosmo.growthFactorUnnormalized(z)
-
-    def Dg_chi(self, chi):
-        '''
-        The unit of chi here is [Mpc/h].
-        Therefore, when applying the function of camb, we need to convert it to the unit of [Mpc], which has been encoded in red_at_chi()
-        '''
-        z = self.red_at_chi(chi)
-        return self.cosmo.growthFactorUnnormalized(z)
-
-    def Dg_norm(self, chi):
-        '''
-        This is the normalized growth factor
-        '''
-        return self.Dg_chi(chi)/self.Dg_z(0.00001)
-    
-    def f_norm(self, chi):
-
-        z = self.red_at_chi(chi)
-        return -self.cosmo.growthFactor(z, derivative=1)/self.cosmo.growthFactor(z, derivative=0)*(1+z)
     
     def Psi_normalizer(self, chi_x):
         '''
@@ -165,8 +153,9 @@ class MyCosmology(object):
         3*Omega_m*HH^2/2
         '''
         z_x = self.red_at_chi(chi_x)
-        #Omega_m = self.results.get_Omega('cdm', z_x) + self.results.get_Omega('Baryon', z_x)
-        Omega_m = self.cosmo.Om(z_x)
+        #Omega_m = self.results.get_Omega('cdm', z_x) + self.results.get_Omega('baryon', z_x)+self.results.get_Omega('neutrino', z_x)+self.results.get_Omega('nu', z_x)
+        #Omega_m = self.cosmo.Om(z_x)
+        Omega_m = self.results.get_Omega('tot', z_x)  - self.results.get_Omega('de', z_x) #- self.results.get_Omega('photon', z_x)
 
         return 1.5 * Omega_m * self.HH(z_x)**2 / (1+z_x)**2
     
@@ -190,7 +179,7 @@ class MyCosmology(object):
         D_today = scipy.special.hyp2f1(1./3.,1,11./6.,-Ol/Om)
         return D/D_today
 
-    def D_chi_class(self, chi, csm):
+    def D_chi_class(self, chi):
         '''
         The linear growth factor as a function of \chi, normalized to D(0) 
         Generated using CLASS package.
@@ -212,7 +201,7 @@ class MyCosmology(object):
         f = 1.-6./11.*x*avec/D*scipy.special.hyp2f1(4./3.,2,17./6.,-x)
         return f
 
-    def f_chi_class(self, chi, csm):
+    def f_chi_class(self, chi):
         '''
         The RSD factor as a function of \chi, in principle f = ln D/ ln a.
         Generated using CLASS package.
@@ -260,9 +249,11 @@ class Sampling(object):
         self.Dg_array = self.default_cosmo.Dg_norm(self.chi_test)
         self.Dg_func = interp1d(self.chi_test, self.Dg_array)
         '''
-        self.chi_array = np.array([0.1 + (9400-0.1)/6000*i for i in range(6001)])
-        self.D_class_array = self.default_cosmo.D_chi_class(self.chi_array, self.default_cosmo.LambdaCDM)
-        self.f_class_array = self.default_cosmo.f_chi_class(self.chi_array, self.default_cosmo.LambdaCDM)
+        self.chi_array = np.array([0.01 + (9400-0.01)/9000*i for i in range(9001)])
+        self.D_class_array = self.default_cosmo.D_chi_class(self.chi_array)#, self.default_cosmo.LambdaCDM)
+        self.f_class_array = self.default_cosmo.f_chi_class(self.chi_array)#, self.default_cosmo.LambdaCDM)
+        #self.D_class = np.vectorize(self.default_cosmo.D_chi_class)
+        #self.f_class = np.vectorize(self.default_cosmo.f_chi_class)
         self.D_class = interp1d(self.chi_array, self.D_class_array)
         self.f_class = interp1d(self.chi_array, self.f_class_array)
 
@@ -287,6 +278,28 @@ class Sampling(object):
         kn = [kmin * np.exp(n[i] * delta) for i in range(Nmax)]
         eta_m = [b + 2*cmath.pi*1j/(Nmax*delta)*m[i] for i in range(Nmax+1)]
         eta_n = [b + 2*cmath.pi*1j/(Nmax*delta)*n[i] for i in range(Nmax)]
+
+        Pn = np.array([ [kn[i], P(kn[i])*(kn[i]/kmin)**(-b)+cst] for i in range(Nmax)])
+        cn = np.array([ np.sum([Pn[k,1]*cmath.exp(-2*cmath.pi*1j*n[i]*n[k]/Nmax)/Nmax for k in range(Nmax)]) for i in range(Nmax)])
+        cnsym = []
+        for j in range(Nmax+1):
+            if m[j] < 0: 
+                cnsym.append(kmin**(-eta_m[j])*np.conjugate(cn[-int(m[j])]))
+            else:
+                cnsym.append(kmin**(-eta_m[j])*cn[int(m[j])])
+        cnsym[0] = cnsym[0]/2
+        cnsym[-1] = cnsym[-1]/2
+        result = np.array([ [cnsym[i], eta_m[i]] for i in range(Nmax+1)])
+
+        return result
+
+    def CoeffTransfer_log(self, P, b, cst, Nmax, kmin, kmax):
+        
+        delta = np.log(kmax/kmin)/(Nmax-1) #Bin width in logk
+        n = [i for i in range(Nmax)]
+        m = [int(i - Nmax/2) for i in range(Nmax+1)]
+        kn = [kmin * np.exp(n[i] * delta) for i in range(Nmax)]
+        eta_m = [b + 2*cmath.pi*1j/(Nmax*delta)*m[i] for i in range(Nmax+1)]
 
         Pn = np.array([ [kn[i], P(kn[i])*(kn[i]/kmin)**(-b)+cst] for i in range(Nmax)])
         cn = np.array([ np.sum([Pn[k,1]*cmath.exp(-2*cmath.pi*1j*n[i]*n[k]/Nmax)/Nmax for k in range(Nmax)]) for i in range(Nmax)])
@@ -434,7 +447,7 @@ class Sampling(object):
         
         return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, f1_f1, f2_f2
 
-    def mesh_grid_generator_CMBlensing(self, Nchi, Ndchi):
+    def mesh_grid_generator_CMBlensing(self, Nchi, Ndchi, z_source):
         '''
         Generating 2D sampling mesh-grid via self-adapting chi and delta_chi
         Params:
@@ -447,8 +460,9 @@ class Sampling(object):
         and, growth factors D1_D1, D2_D2.
         '''
         chi_min = 1.0
-        chi_max = self.default_cosmo.chi(1090)-1.0
-        chi_array = np.e**np.array([np.log(chi_min) + i*(np.log(chi_max)-np.log(chi_min))/(Nchi-1) for i in range(Nchi)])
+        chi_max = self.default_cosmo.chi(z_source)-1.0
+        #chi_array = np.e**np.array([np.log(chi_min) + i*(np.log(chi_max)-np.log(chi_min))/(Nchi-1) for i in range(Nchi)])
+        chi_array = np.array([chi_min + i*(chi_max-chi_min)/(Nchi-1) for i in range(Nchi)])
         dchi_basline = np.arange(2*Ndchi+2)
         D1_D1 = np.zeros((2*Ndchi+2, Nchi))
         D2_D2 = np.zeros((2*Ndchi+2, Nchi))
@@ -458,7 +472,7 @@ class Sampling(object):
         chi_chi, dchi_dchi_raw = np.meshgrid(chi_array, dchi_basline)
         dchi_dchi_list = []
         for i in range(Nchi):
-            dchi_max = min(2*chi_array[i], 2*(self.default_cosmo.chi(1100)-chi_array[i])) #We can change the maximum comoving distance, but note there are actually upper limit in colossus code
+            dchi_max = min(2*chi_array[i], 2*(self.default_cosmo.chi(z_source)-chi_array[i])) #We can change the maximum comoving distance, but note there are actually upper limit in colossus code
             dchi_array = list(-10**np.array([-2+(np.log10(dchi_max-0.5)+2)/Ndchi*j for j in range(Ndchi+1)])[::-1])\
                 +list(10**np.array([-2+(np.log10(dchi_max-0.5)+2)/Ndchi*j for j in range(Ndchi+1)]))
             dchi_dchi_list.append(dchi_array)
@@ -478,8 +492,8 @@ class Sampling(object):
         
         D1_D1 = self.D_class(grid1)
         D2_D2 = self.D_class(grid2)
-        Wg1_Wg1 = self.Wlensing(grid1, self.default_cosmo.chi(1090))
-        Wg2_Wg2 = self.Wlensing(grid2, self.default_cosmo.chi(1090))
+        Wg1_Wg1 = self.Wlensing(grid1, self.default_cosmo.chi(z_source))
+        Wg2_Wg2 = self.Wlensing(grid2, self.default_cosmo.chi(z_source))
 
         return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, F1_F1, F2_F2
     
@@ -516,6 +530,31 @@ class Sampling(object):
 ###################################################################################################
 #Some old and not directly used scripts
 '''
+ #Now we define the growth factors
+    def Dg_z(self, z):
+        
+        This is the unnormalized growth factor given a redshift z
+        
+        return self.cosmo.growthFactorUnnormalized(z)
+
+    def Dg_chi(self, chi):
+    
+        The unit of chi here is [Mpc/h].
+        Therefore, when applying the function of camb, we need to convert it to the unit of [Mpc], which has been encoded in red_at_chi()
+    
+        z = self.red_at_chi(chi)
+        return self.cosmo.growthFactorUnnormalized(z)
+
+    def Dg_norm(self, chi):
+        
+        This is the normalized growth factor
+        
+        return self.Dg_chi(chi)/self.Dg_z(0.00001)
+    
+    def f_norm(self, chi):
+
+        z = self.red_at_chi(chi)
+        return -self.cosmo.growthFactor(z, derivative=1)/self.cosmo.growthFactor(z, derivative=0)*(1+z)
 default_cosmo = MyCosmology()
 
 def CoeffTransfer(P, b, cst, Nmax, kmin, kmax):
