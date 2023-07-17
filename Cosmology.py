@@ -60,20 +60,17 @@ class MyCosmology(object):
         self.pars.NonLinear = model.NonLinear_none
         self.pars.set_matter_power(redshifts=[0.,0.8], kmax=200.0*self.h)
         self.results = camb.get_results(self.pars)
-        
         #Linear spectra
         self.kh, _, self._pk = self.results.get_matter_power_spectrum(minkh=1e-4, maxkh=200.0, npoints = 200)
         self.pk = self._pk[0,:]
+
+        #Set up CLASS
         self.LambdaCDM = Class()
         # pass input parameters
         self.LambdaCDM.set({'omega_b':self.ombh2,'omega_cdm':self.omch2,'h':self.h,'A_s':self.As,'n_s':self.ns,'tau_reio':self.tau})
         self.LambdaCDM.set({'output':'tCl,pCl,lCl,mPk','lensing':'yes','P_k_max_1/Mpc':200.0})
         # run class
         self.LambdaCDM.compute()
-        #Setting up colossus
-        #self.params = {'flat': True, 'H0': 100*h, 'Om0': self.Omm, 'Ob0': self.Omb, 'sigma8': self.s8, 'ns': self.ns}
-        #cosmology.addCosmology('myCosmo', self.params)
-        #self.cosmo = cosmology.setCosmology('planck18')
 
         #self.pkdata = np.loadtxt('/Users/cheng/Documents/Researches_at_Cambridge/Limber/1705 2/Mathematica/PCAMBz0.txt')
         #self.pkdata = np.loadtxt('/Users/cheng/Documents/Researches_at_Cambridge/Limber/1705Python/Package/cosmo_params/pk_camb_planck18.txt')
@@ -84,26 +81,11 @@ class MyCosmology(object):
         self.Plowk = np.array([self.pk[0]*(10**kappa/self.kh.min())**pa.ns for kappa in self.kappa_array])
         self.kh_new = np.array(list(self.lowkh)+list(self.kh[0:]))
         self.Pk_new = np.array(list(self.Plowk)+list(self.pk[0:]))
-        #self.pk_interp = interp1d(self.kh, self.pk)
-        #self.Plin = np.vectorize(self.Plin_vec)
         #Initialize the linear power spectrum P(kh) in our given universe
         self.Plin = interp1d(self.kh_new, self.Pk_new)
         
         self.aa_array = np.e**np.array([np.log(1/1110)+np.log(1110)/10000*i for i in range(10000)])[::-1]
         self.defchi_array = self.chi(1/self.aa_array-1)
-        self.Dg_array = self.Dg_norm(self.defchi_array)
-        self.f_array = diff(np.log(self.Dg_array))/diff(np.log(self.aa_array))
-        self.f_broad = interp1d(self.defchi_array[:-1], self.f_array)
-
-    def Plin_vec(self, kh):
-
-        if kh<(1e-4/pa.h):
-                return 0 
-        if kh>(10/pa.h):
-                return 0
-        
-        else:
-                return self.pk_interp(kh)
     
     def chi(self, z):
         '''
@@ -244,16 +226,9 @@ class Sampling(object):
         self.default_cosmo = MyCosmology(c, zCMB, zmax, h, omch2, ombh2, ns, s8, As)
         self.Wg = Window_function().Wg
         self.Wlensing = Window_function().Wlensing
-        '''
-        self.chi_test = np.array([0.1 + i*0.9 for i in range(10200) ])
-        self.Dg_array = self.default_cosmo.Dg_norm(self.chi_test)
-        self.Dg_func = interp1d(self.chi_test, self.Dg_array)
-        '''
         self.chi_array = np.array([0.01 + (9400-0.01)/9000*i for i in range(9001)])
         self.D_class_array = self.default_cosmo.D_chi_class(self.chi_array)#, self.default_cosmo.LambdaCDM)
         self.f_class_array = self.default_cosmo.f_chi_class(self.chi_array)#, self.default_cosmo.LambdaCDM)
-        #self.D_class = np.vectorize(self.default_cosmo.D_chi_class)
-        #self.f_class = np.vectorize(self.default_cosmo.f_chi_class)
         self.D_class = interp1d(self.chi_array, self.D_class_array)
         self.f_class = interp1d(self.chi_array, self.f_class_array)
 
@@ -292,59 +267,6 @@ class Sampling(object):
         result = np.array([ [cnsym[i], eta_m[i]] for i in range(Nmax+1)])
 
         return result
-
-    def CoeffTransfer_log(self, P, b, cst, Nmax, kmin, kmax):
-        
-        delta = np.log(kmax/kmin)/(Nmax-1) #Bin width in logk
-        n = [i for i in range(Nmax)]
-        m = [int(i - Nmax/2) for i in range(Nmax+1)]
-        kn = [kmin * np.exp(n[i] * delta) for i in range(Nmax)]
-        eta_m = [b + 2*cmath.pi*1j/(Nmax*delta)*m[i] for i in range(Nmax+1)]
-
-        Pn = np.array([ [kn[i], P(kn[i])*(kn[i]/kmin)**(-b)+cst] for i in range(Nmax)])
-        cn = np.array([ np.sum([Pn[k,1]*cmath.exp(-2*cmath.pi*1j*n[i]*n[k]/Nmax)/Nmax for k in range(Nmax)]) for i in range(Nmax)])
-        cnsym = []
-        for j in range(Nmax+1):
-            if m[j] < 0: 
-                cnsym.append(kmin**(-eta_m[j])*np.conjugate(cn[-int(m[j])]))
-            else:
-                cnsym.append(kmin**(-eta_m[j])*cn[int(m[j])])
-        cnsym[0] = cnsym[0]/2
-        cnsym[-1] = cnsym[-1]/2
-        result = np.array([ [cnsym[i], eta_m[i]] for i in range(Nmax+1)])
-
-        return result
-    
-    def mesh_grid_generator_old(self, z1, z2, sigma1, sigma2, Nchi, Ndchi):
-        '''
-        Params:
-        z1, z2: the redshifts of our objects
-        sigma1, sigma2: the dispersion of our window function
-        Nchi, Ndchi: fidicually chosen length of the sampling array
-
-        Return:
-        mesh-grids of chi_chi, dchi_dchi, 
-        and, growth factors D1_D1, D2_D2.
-        '''
-        chi_avg1 = self.default_cosmo.chi(z1)
-        chi_avg2 = self.default_cosmo.chi(z2)
-        chi_sigma1 = sigma1/self.default_cosmo.HH(z1)
-        chi_sigma2 = sigma2/self.default_cosmo.HH(z2)
-        chi_min = max(chi_avg1-3*chi_sigma1, self.default_cosmo.chi(0.00001))
-        chi_max = min(chi_avg2+3*chi_sigma2, self.default_cosmo.chi(10.0))
-        chi_array = np.array([chi_min + i*(chi_max-chi_min)/Nchi for i in range(Nchi)])
-        dchi_array = np.array(list(-10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])[::-1])\
-                +list(10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])))
-        #Create the sample grid
-        D1_D1 = np.array([[self.default_cosmo.Dg_norm(chi-0.5*dchi) for chi in chi_array] for dchi in dchi_array])
-        D2_D2 = np.array([[self.default_cosmo.Dg_norm(chi+0.5*dchi) for chi in chi_array] for dchi in dchi_array])
-        chi_chi, dchi_dchi = np.meshgrid(chi_array, dchi_array)
-        grid1 = chi_chi-0.5*dchi_dchi
-        grid2 = chi_chi+0.5*dchi_dchi
-        Wg1_Wg1 = self.Wg(grid1, chi_avg1, chi_sigma1)
-        Wg2_Wg2 = self.Wg(grid2, chi_avg2, chi_sigma2)
-
-        return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2
     
     def mesh_grid_generator(self, z1, z2, sigma1, sigma2, Nchi, Ndchi):
         '''
@@ -497,206 +419,5 @@ class Sampling(object):
 
         return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, F1_F1, F2_F2
     
-    def mesh_grid_generator_CMBlensing_chi12(self, Nchi1, Nchi2):
-        '''
-        Generating sampling mesh-grid according to chi1 and chi2
-        Params:
-        z1, z2: the redshifts of our objects
-        sigma1, sigma2: the dispersion of our window function
-        Nchi, Ndchi: fidicually chosen length of the sampling array
-
-        Return:
-        mesh-grids of chi_chi, dchi_dchi, 
-        and, growth factors D1_D1, D2_D2.
-        '''
-        chi_min = 0.1
-        chi_max = self.default_cosmo.chi(1091)
-        chi1_array = 10**np.array([np.log10(chi_min) + i*np.log10(chi_max/chi_min)/Nchi1 for i in range(Nchi1)])
-        chi2_array = 10**np.array([np.log10(chi_min) + i*np.log10(chi_max/chi_min)/Nchi2 for i in range(Nchi2)])
-        chi1_chi1, chi2_chi2 = np.meshgrid(chi1_array, chi2_array)
-        #dchi_array = np.array(list(-10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])[::-1])\
-                #+list(10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])))
-        #Create the sample grid
-        D1_array = np.array([self.default_cosmo.Dg_norm(chi1) for chi1 in chi1_array])
-        D2_array = np.array([self.default_cosmo.Dg_norm(chi2) for chi2 in chi2_array])
-        D1_D1, D2_D2 = np.meshgrid(D1_array, D2_array)
-
-        Wg1_Wg1 = self.Wlensing(chi1_chi1, self.default_cosmo.chi(1100))
-        Wg2_Wg2 = self.Wlensing(chi2_chi2, self.default_cosmo.chi(1100))
-        F1_F1 = self.default_cosmo.Psi_normalizer(chi1_chi1)
-        F2_F2 = self.default_cosmo.Psi_normalizer(chi2_chi2)
-
-        return chi1_chi1, chi2_chi2, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, F1_F1, F2_F2
 ###################################################################################################
-#Some old and not directly used scripts
-'''
- #Now we define the growth factors
-    def Dg_z(self, z):
-        
-        This is the unnormalized growth factor given a redshift z
-        
-        return self.cosmo.growthFactorUnnormalized(z)
-
-    def Dg_chi(self, chi):
-    
-        The unit of chi here is [Mpc/h].
-        Therefore, when applying the function of camb, we need to convert it to the unit of [Mpc], which has been encoded in red_at_chi()
-    
-        z = self.red_at_chi(chi)
-        return self.cosmo.growthFactorUnnormalized(z)
-
-    def Dg_norm(self, chi):
-        
-        This is the normalized growth factor
-        
-        return self.Dg_chi(chi)/self.Dg_z(0.00001)
-    
-    def f_norm(self, chi):
-
-        z = self.red_at_chi(chi)
-        return -self.cosmo.growthFactor(z, derivative=1)/self.cosmo.growthFactor(z, derivative=0)*(1+z)
-default_cosmo = MyCosmology()
-
-def CoeffTransfer(P, b, cst, Nmax, kmin, kmax):
-    """
-    Params:
-    P: function to Fourier transform
-    b: bias
-    cst: constant
-    k^{-b}*P(k)+cst will be Fourier transformed
-    Nmax: number of frequencies, must be a even number
-    kmin: minimum wavenumber
-    kmax: maximum wavenumber
-
-    Returns:
-    C[i,0]: ith coefficient of the Fourier transform
-    C[i,1]: ith frequency of the Fourier transform
-    """
-    delta = np.log(kmax/kmin)/(Nmax-1) #Bin width in logk
-    n = [i for i in range(Nmax)]
-    m = [int(i-Nmax/2) for i in range(Nmax+1)]
-    kn = [kmin*np.exp(n[i]*delta) for i in range(Nmax)]
-    eta_m = [b + 2*cmath.pi*1j/(Nmax*delta)*m[i] for i in range(Nmax+1)]
-    eta_n = [b + 2*cmath.pi*1j/(Nmax*delta)*n[i] for i in range(Nmax)]
-
-    Pn = np.array([ [kn[i], P(kn[i])*(kn[i]/kmin)**(-b)+cst] for i in range(Nmax) ])
-    cn = np.array([ np.sum([Pn[k,1]*cmath.exp(-2*cmath.pi*1j*n[i]*n[k]/Nmax)/Nmax for k in range(Nmax)]) for i in range(Nmax)])
-    cnsym = []
-    for j in range(Nmax+1):
-        if m[j]<0: 
-            cnsym.append(kmin**(-eta_m[j])*np.conjugate(cn[-int(m[j])]))
-        else:
-            cnsym.append(kmin**(-eta_m[j])*cn[int(m[j])])
-    cnsym[0] = cnsym[0]/2
-    cnsym[-1] = cnsym[-1]/2
-    result = np.array([ [cnsym[i], eta_m[i]] for i in range(Nmax+1)])
-
-    return result
-
-########################################################################################################
-#May consider write these into classes in the future
-khmin= 1e-8
-khmax = 52.
-Nmax = 200
-CC = CoeffTransfer(default_cosmo.Plin, 0, 0, Nmax, khmin, khmax)
-c_n_array = CC[:, 0]
-nu_n_array = CC[:, 1]
-print('Linear Power Spectrum at z=0 expanded. The number of expansion terms is: %d'%len(c_n_array))
-
-########################################################################################################
-def Wg(chi, chi_avg, chi_sigma):
-    """
-    Here we consider a Gaussian window function
-    """
-    term1 = 1/(np.sqrt(2*np.pi))/chi_sigma
-    term2 = np.exp(-(chi-chi_avg)**2/(2*chi_sigma**2))
-    return term1*term2
-
-import time
-
-def mesh_grid_generator(z1, z2, sigma1, sigma2, Nchi, Ndchi):
-    """
-    Params:
-    z1, z2: the redshifts of our objects
-    sigma1, sigma2: the dispersion of our window function
-    Nchi, Ndchi: fidicually chosen length of the sampling array
-
-    Return:
-    mesh-grids of chi_chi, dchi_dchi, 
-    and, growth factors D1_D1, D2_D2.
-    """
-    chi_avg1 = default_cosmo.chi(z1)
-    chi_avg2 = default_cosmo.chi(z2)
-    chi_sigma1 = sigma1/default_cosmo.HH(z1)
-    chi_sigma2 = sigma2/default_cosmo.HH(z2)
-    chi_min = max(chi_avg1-4*chi_sigma1, 0.5)
-    chi_max = min(chi_avg2+4*chi_sigma2, default_cosmo.chi(10.0))
-    chi_array = np.array([chi_min + i*(chi_max-chi_min)/Nchi for i in range(Nchi)])
-    dchi_array = np.array(list(-10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])[::-1])\
-        +list(10**np.array([-1+(np.log10(chi_max-chi_min)+1)/Ndchi*i for i in range(Ndchi+1)])))
-    #Create the sample grid
-    D1_D1 = np.array([[default_cosmo.Dg_norm(chi-0.5*dchi) for chi in chi_array] for dchi in dchi_array])
-    D2_D2 = np.array([[default_cosmo.Dg_norm(chi+0.5*dchi) for chi in chi_array] for dchi in dchi_array])
-    chi_chi, dchi_dchi = np.meshgrid(chi_array, dchi_array)
-    grid1 = chi_chi-0.5*dchi_dchi
-    grid2 = chi_chi+0.5*dchi_dchi
-    Wg1_Wg1 = Wg(grid1, chi_avg1, chi_sigma1)
-    Wg2_Wg2 = Wg(grid2, chi_avg2, chi_sigma2)
-
-    return chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2
-
-def power_calc_sampling(l, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, c_n_array):
-    """
-    Params:
-    l: The multiple
-    n: The order of our approximation, usually order 0 will be good enough
-    chi_chi, dchi_dchi: The 2D mesh-grid of the chi (dchi) parameter. 
-                        The n_row is the same as length of dchi array, 
-                        while the n_columns is the same as length of chi array.
-    D1_D1, D2_D2: The mesh-grid of growth factor. The same shape as chi_chi.
-    Wg1_Wg1, Wg2_Wg2: The mesh-grid of several window functions.
-
-    Return:
-    The angular power spetrum at mutiple l.
-    """
-    xx = dchi_dchi*l/(chi_chi+0.5*dchi_dchi)
-    Cl_array_array = np.array([ (c_n_array[i+int(Nmax/2)+1]*(func_real_list[i](np.abs(xx))+1j*func_imag_list[i](np.abs(xx))))*\
-        np.abs(dchi_dchi)**(-nu_n_array[int(Nmax/2)+1+i]-1) for i in range(int(Nmax/2))])
-    Cl_array = np.sum(Cl_array_array, axis=0)
-
-    Simp_array = D1_D1*D2_D2*2*Cl_array*Wg1_Wg1*Wg2_Wg2*(dchi_dchi/chi_chi)**n/chi_chi**2
-    results = simps(simps(Simp_array, chi_chi[0,:]), dchi_dchi[:,0])
-    return results
-
-def full_calc_sampling(l_array, n, z1, z2, sigma1, sigma2, Nchi, Ndchi):
-    """
-    Params:
-    l_array: The array of multiples we have chosen to consider
-    The meaning of rest parameters could be found above
-
-    Return:
-    An list of angular power spectrum given l_array
-    """
-    start1 = time.time()
-    chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2 = mesh_grid_generator(z1, z2, sigma1, sigma2, Nchi, Ndchi)
-    end1 = time.time()-start1
-    print('Time for preparing mesh-grids is:', end1, 's')
-    start2 = time.time()
-    power_array = [power_calc_sampling(li, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2).real for li in l_array]
-    end2 = (time.time()-start2)/len(l_array)
-    print('Time for calculating each l is:', end2, 's')
-
-    return power_array
-
-
-#After initialize the functions we need
-
-
-#func_real, func_imag = special_func_interp(c_n_array, nu_n_array, x_array, Nmax=200)
-'''
-
-
-
-
-
-
+ 
