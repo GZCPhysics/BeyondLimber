@@ -16,7 +16,7 @@ The full-sky angular power spectra are pre-calculated and stored in:
 Note that all the angular power spectra are calculated based on the power spectrum given in /cosmo_params/pk_camb_planck18.txt
 
 Required the packages are: 
-### numpy, scipy, mpmath, Colossus, pyCAMB, CLASS.
+### numpy, scipy, mpmath, pyCAMB, CLASS.
 
 The choice of cosmology related functions could be replaced with anything users are familiar with.
 
