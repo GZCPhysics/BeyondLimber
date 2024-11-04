@@ -6,6 +6,7 @@ import Cosmology as Csm
 from scipy.integrate import quad
 import importlib
 importlib.reload(Csm)
+importlib.reload(DC)
 
 #########################################################
 #Precalculating all the cosmology terms
@@ -16,7 +17,7 @@ khmax = 52.0
 Nmax = 200
 #c_n_array = sampling_cosmo.CoeffTransfer(sampling_cosmo.default_cosmo.Plin, 0, 0, Nmax, khmin, khmax)[:, 0]
 #nu_n_array = sampling_cosmo.CoeffTransfer(sampling_cosmo.default_cosmo.Plin, 0, 0, Nmax, khmin, khmax)[:, 1]
-nu_n_array = np.load('/Users/cheng/Documents/Researches_at_Cambridge/Limber/1705Python/Package/cosmo_params/nu_n_array.npy')
+nu_n_array = np.load('/Users/cheng/Documents/Research_at_Cambridge/Limber/1705Python/Package/cosmo_params/nu_n_array.npy')
 #print('Linear Power Spectrum at z=0 expanded. The number of expansion terms is: %d'%len(c_n_array))
 
 #########################################################
@@ -353,6 +354,55 @@ def full_calc_sampling_CMBlensing_wo_rad(l_array, Nchi, Ndchi, z_source, c_array
 
     return power_array
 
+###################################################################################################################
+#Lensing X clustering
+
+def power_calc_sampling_gk_mod(l, chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2, c_array, nu_n_array, func_real_list1, func_imag_list1):
+    '''
+    Params:
+    l: The multiple
+    n: The order of our approximation, usually order 0 will be good enough
+    chi_chi, dchi_dchi: The 2D mesh-grid of the chi (dchi) parameter. 
+                        The n_row is the same as length of dchi array, 
+                        while the n_columns is the same as length of chi array.
+    D1_D1, D2_D2: The mesh-grid of growth factor. The same shape as chi_chi.
+    Wg1_Wg1, Wg2_Wg2: The mesh-grid of several window functions.
+    F1_Wg1, F2_F2: The mesh-grid of potential factors.
+
+    Return:
+    The angular power spetrum at mutiple l.
+    '''
+    Nmax = int(len(nu_n_array)-1)
+    xx = dchi_dchi *np.sqrt(l*(l+1))/chi_chi/np.sqrt(1-(dchi_dchi/2/chi_chi)**2)
+    l_tilde = np.sqrt(l*(l+1))/chi_chi/np.sqrt(1-(dchi_dchi/2/chi_chi)**2)
+    Cl_array_0 = (c_array[int(Nmax/2)]*(func_real_list1[int(Nmax/2)](np.abs(xx))+1j*func_imag_list1[int(Nmax/2)](np.abs(xx))))*\
+        np.abs(l_tilde)**(nu_n_array[int(Nmax/2)]+1)
+    Cl_array_array = np.array([ (c_array[i+int(Nmax/2)]*(func_real_list1[i+int(Nmax/2)](np.abs(xx))+1j*func_imag_list1[i+int(Nmax/2)](np.abs(xx))))*\
+        np.abs(l_tilde)**(nu_n_array[i+int(Nmax/2)]+1) for i in range(1, int(Nmax/2)+1)])
+    
+    Cl_array = Cl_array_0 + 2*np.sum(Cl_array_array, axis=0)
+    
+    #Simp_array = F1_F1*F2_F2*D1_D1*D2_D2*Cl_array*W1_W1*W2_W2/(chi_chi-0.0*dchi_dchi)**2/2*l*(l+1) #Normal
+    Simp_array = F1_F1*F2_F2*D1_D1*D2_D2*Cl_array*W1_W1*W2_W2*(chi_chi+0.5*dchi_dchi)/(chi_chi-0.5*dchi_dchi)/2 #No rad
+    intover_dchi = np.array([simps(Simp_array[:,i], dchi_dchi[:,i]) for i in range(len(chi_chi[0,:]))])
+    results = simps(intover_dchi, chi_chi[0, :])
+    return results
+
+def full_calc_sampling_gk(l_array, z1, sigma1, Nchi, Ndchi, z_source, c_array, nu_n_array, func_real_list1, func_imag_list1):
+    
+    start1 = time.time()
+    chi_chi, dchi_dchi, D1_D1, D2_D2, W1_W1, W2_W2, F1_F1, F2_F2 = sampling_cosmo.mesh_grid_generator_CMBlensing(Nchi, Ndchi, z_source)
+    chi1_chi1 = chi_chi-0.5*dchi_dchi
+    Wg1_Wg1 = sampling_cosmo.Wg(chi1_chi1, sampling_cosmo.default_cosmo.chi(z1), sigma1/sampling_cosmo.default_cosmo.HH(z1))
+    end1 = time.time()-start1
+    print('Time for preparing mesh-grids is:', end1, 's')
+    start2 = time.time()
+    power_array = [power_calc_sampling_gk_mod(li, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, W2_W2, 1., F2_F2, c_array, nu_n_array, func_real_list1, func_imag_list1).real for li in l_array]
+    end2 = (time.time()-start2)/len(l_array)
+    print('Time for calculating each l is:', end2, 's')
+
+    return power_array
+
 
 ###################################################################################################################
 #Limber's approximation
@@ -360,6 +410,10 @@ def full_calc_sampling_CMBlensing_wo_rad(l_array, Nchi, Ndchi, z_source, c_array
 def Pk_potent(kh):
 
     return sampling_cosmo.default_cosmo.Plin(kh)
+
+def Pk_potent2(kh):
+
+    return sampling_cosmo.default_cosmo.Plin(kh)/kh**2
 
 def Pk_potent1(kh):
 
@@ -406,3 +460,82 @@ def Limber_CMBlensing(l, chi_min, chi_star):
     
     return quad(integrand, chi_min, chi_star)[0]
 
+def Limber_gk(l, chi_avg, chi_sigma, chi_min, chi_star):
+
+    def integrand(chi):
+        W1 = sampling_cosmo.Wlensing(chi, chi_star)
+        W2 = sampling_cosmo.Wg(chi, chi_avg, chi_sigma)
+        D1 = sampling_cosmo.D_class(chi)
+        F1 = sampling_cosmo.default_cosmo.Psi_normalizer(chi)
+
+        return sampling_cosmo.default_cosmo.Plin(l/chi) * (W1*W2) * (D1**2) * (F1**1)
+    
+    return quad(integrand, chi_min, chi_star)[0]
+
+
+'''
+#These two functions are used to calculate the galaxy clustering power spectrum using the old sampling method
+
+def power_calc_sampling(l, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, c_n_array):
+
+    xx = dchi_dchi*l/(chi_chi+0.5*dchi_dchi)
+    
+    Cl_array_array = np.array([ (c_n_array[i+int(Nmax/2)+1]*(func_real_list[i](np.abs(xx))+1j*func_imag_list[i](np.abs(xx))))*\
+        np.abs(dchi_dchi)**(-nu_n_array[int(Nmax/2)+1+i]-1) for i in range(int(Nmax/2))])
+    
+    #Cl_array_array = np.array([ (c_n_array[i]*(func_real_list[i](np.abs(xx))+1j*func_imag_list[i](np.abs(xx))))*\
+        #np.abs(dchi_dchi)**(-nu_n_array[i]-1) for i in range(int(Nmax)+1)])
+    
+    Cl_array = np.sum(Cl_array_array, axis=0)
+
+    Simp_array = D1_D1*D2_D2*2*Cl_array*Wg1_Wg1*Wg2_Wg2*(dchi_dchi/chi_chi)**n/chi_chi**2
+    #Simp_array = D1_D1*D2_D2*Cl_array*Wg1_Wg1*Wg2_Wg2*(dchi_dchi/chi_chi)**n/chi_chi**2
+    results = simps(simps(Simp_array, chi_chi[0, :]), dchi_dchi[:, 0])
+    return results
+
+def full_calc_sampling(l_array, n, z1, z2, sigma1, sigma2, Nchi, Ndchi, c_n_array = c_n_array):
+   
+    start1 = time.time()
+    chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2 = sampling_cosmo.mesh_grid_generator_old(z1, z2, sigma1, sigma2, Nchi, Ndchi)
+    end1 = time.time()-start1
+    print('Time for preparing mesh-grids is:', end1, 's')
+    start2 = time.time()
+    power_array = [power_calc_sampling(li, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, c_n_array).real for li in l_array]
+    end2 = (time.time()-start2)/len(l_array)
+    print('Time for calculating each l is:', end2, 's')
+
+    return np.array(power_array)
+
+def power_calc_sampling_modify(l, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, c_n_array):
+    
+    #With geometric modification, we only need to re-evaluate the \tilde{\ell} by a factor of sqrt(l*(l+1))/sqrt(1-delta**2)
+    #All the rest of calculation will remain the same.
+    delta_delta = 0.5*(dchi_dchi/chi_chi)
+
+    xx = dchi_dchi*np.sqrt(l*(l+1))/(chi_chi+0.5*dchi_dchi)/(1-delta_delta)  
+    
+    Cl_array_array = np.array([ (c_n_array[i+int(Nmax/2)+1]*(func_real_list[i](np.abs(xx))+1j*func_imag_list[i](np.abs(xx))))*\
+        np.abs(dchi_dchi)**(-nu_n_array[int(Nmax/2)+1+i]-1) for i in range(int(Nmax/2))])
+    
+    #Cl_array_array = np.array([ (c_n_array[i]*(func_real_list[i](np.abs(xx))+1j*func_imag_list[i](np.abs(xx))))*\
+        #np.abs(dchi_dchi)**(-nu_n_array[i]-1) for i in range(int(Nmax)+1)])
+    Cl_array = np.sum(Cl_array_array, axis=0)
+
+    Simp_array = D1_D1*D2_D2*2*Cl_array*Wg1_Wg1*Wg2_Wg2*(dchi_dchi/chi_chi)**n/chi_chi**2
+    #Simp_array = D1_D1*D2_D2*Cl_array*Wg1_Wg1*Wg2_Wg2*(dchi_dchi/chi_chi)**n/chi_chi**2
+    results = simps(simps(Simp_array, chi_chi[0, :]), dchi_dchi[:, 0])
+    return results
+
+def full_calc_sampling_modify(l_array, n, z1, z2, sigma1, sigma2, Nchi, Ndchi, c_n_array = c_n_array):
+
+    start1 = time.time()
+    chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2 = sampling_cosmo.mesh_grid_generator(z1, z2, sigma1, sigma2, Nchi, Ndchi)
+    end1 = time.time()-start1
+    print('Time for preparing mesh-grids is:', end1, 's')
+    start2 = time.time()
+    power_array = [power_calc_sampling_modify(li, n, chi_chi, dchi_dchi, D1_D1, D2_D2, Wg1_Wg1, Wg2_Wg2, c_n_array).real for li in l_array]
+    end2 = (time.time()-start2)/len(l_array)
+    print('Time for calculating each l is:', end2, 's')
+
+    return np.array(power_array)
+'''
